@@ -1,0 +1,5 @@
+{
+    "base_url": "https://username:password@server_address/webacs/api/v4/",
+    "username": "username",
+    "password": "password"
+}
