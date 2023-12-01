@@ -2,6 +2,7 @@
 
 import requests
 import re
+import time
 
 from requests.packages.urllib3.exceptions import InsecureRequestWarning
 
@@ -36,18 +37,30 @@ def load_config(filename):
 
 def get_next_ap_id(list_of_aps_on_floor):
 
-    # Extract numeric part from the last item
+    ## Extract numeric part from the last item
     last_item = list_of_aps_on_floor[-1]
-    last_numeric_part = int(re.search(r'\d+$', last_item).group())
-
+    last_numeric_part_str = re.search(r'(\d{2})$', last_item).group(1)
+    last_numeric_part_int = int(last_numeric_part_str)
     # Increment the last numeric part by 1
-    next_numeric_part = last_numeric_part + 1
+    next_numeric_part = last_numeric_part_int + 1
+    
+    ## Create the new ID
+    
+    # Use regular expression to find the last occurrence of two digits at the end
+    match = re.search(r'(\d{2})$', last_item)
 
-    # Create the new ID
-    non_numeric_part = last_item[:last_item.index(str(last_numeric_part))]
-    next_id = f"{non_numeric_part}{next_numeric_part:02d}"
-    print (next_id)
-    return next_id
+    if match:
+        # Get the index of the last occurrence
+        index_of_last_digits = match.start()
+
+        # Extract the non-numeric part before the last occurrence
+        non_numeric_part = last_item[:index_of_last_digits]
+        
+        next_id = f"{non_numeric_part}{next_numeric_part:02d}"
+        print("next_id: "+  next_id)
+        return next_id
+    else:
+        print("No match found for:", last_item)
 
 
 # Function to query AP name and return IP address
@@ -59,6 +72,7 @@ def get_list_of_current_aps_per_floor(base_url, username, password, ap_floor_loc
         "Content-Type": "application/json",
     }
 
+    #ap_response = requests.post(ap_url, headers=auth_headers, auth=(username, password), verify=False)
     ap_response = requests.get(ap_url, headers=auth_headers, auth=(username, password), verify=False)
 
     if ap_response.status_code == 200:
@@ -74,8 +88,8 @@ def get_list_of_current_aps_per_floor(base_url, username, password, ap_floor_loc
 
             ap_name_element = entity.find(".//name")
             ap_locationHierarchy_element = entity.find(".//locationHierarchy").text
-
-            #print (name_element.text)
+            ap_apGroupName_element = entity.find(".//apGroupName").text
+            print (ap_apGroupName_element)
         
             if ap_name_element is not None:
                 floor_aps.append(ap_name_element.text)
@@ -87,8 +101,9 @@ def get_list_of_current_aps_per_floor(base_url, username, password, ap_floor_loc
         floor_aps.sort()
         for item in floor_aps:
             print(f"- {item}")
+#        next_ap_id = floor_aps[]
         
-        return floor_aps, ap_locationHierarchy_element
+        return floor_aps, ap_locationHierarchy_element, ap_apGroupName_element
     else:
         raise Exception(f"Failed to query AP info for AP name: {ap_floor_location}")
 
@@ -122,7 +137,7 @@ def get_ap_accessPointId_info(base_url, username, password, ap_name):
         raise Exception(f"Failed to query AP info for AP name: {ap_name}")
         
 # Function update AP name and 
-def update_ap_name_and_locationHierarchy(ap_id, new_ap_name, ap_locationHierarchy_element):
+def update_ap_name_and_locationHierarchy(ap_id, new_ap_name, ap_locationHierarchy_element, ap_apGroupName_element):
     #write something.
     print (ap_locationHierarchy_element)
     ap_url = base_url + f"op/apService/accessPoint"
@@ -130,7 +145,7 @@ def update_ap_name_and_locationHierarchy(ap_id, new_ap_name, ap_locationHierarch
     auth_headers = {
         "Content-Type": "text/xml",
     }
-
+#/webacs/api/v4/data/AccessPointDetails/16034524650
     xml_payload = """<?xml version="1.0" ?>
 <unifiedApDetailsDTO>
   <accessPointId>{}</accessPointId>
@@ -138,10 +153,12 @@ def update_ap_name_and_locationHierarchy(ap_id, new_ap_name, ap_locationHierarch
   <location>{}</location>
   <mapLocation>{}</mapLocation>
   <locationHierarchy>{}</locationHierarchy>
+  <apGroupName>{}</apGroupName>
   </unifiedApDetailsDTO>
-    """.format(ap_id,new_ap_name,ap_locationHierarchy_element,ap_locationHierarchy_element,ap_locationHierarchy_element)
+    """.format(ap_id,new_ap_name,ap_locationHierarchy_element,ap_locationHierarchy_element,ap_locationHierarchy_element, ap_apGroupName_element)
     #
-
+#ap_locationHierarchy_element
+#AP6871.6121.E0AC AP-154b-01
     ap_response = requests.put(ap_url, headers=auth_headers, auth=(username, password), verify=False, data=xml_payload)
     if ap_response.status_code == 200:
         # Parse the XML content of the response
@@ -167,7 +184,7 @@ if __name__ == "__main__":
                 # Split the line into a list of strings using whitespace as the delimiter
                 ap_names = stripped_line.split()
                 #new_ap_name = next_available_ap_name(ap_names[0])
-                list_of_aps_on_floor, ap_locationHierarchy_element = get_list_of_current_aps_per_floor(base_url, username, password, ap_names[1])
+                list_of_aps_on_floor, ap_locationHierarchy_element,ap_apGroupName_element = get_list_of_current_aps_per_floor(base_url, username, password, ap_names[1])
                 
                 #increment these IPs to get next AP ID
                 new_ap_name = get_next_ap_id(list_of_aps_on_floor)
@@ -178,11 +195,16 @@ if __name__ == "__main__":
                 print("Change AP name From: " + ap_names[0])
                 print ("To New AP Name: " + new_ap_name )
                 print ("Adding to Floor: " + ap_locationHierarchy_element)
+                print ("Group Name is: " + ap_apGroupName_element)
                 print ("AP accessPointId: " + accessPointId)
                 
                 #Update old AP name 'ap_names' with new AP name 'new_ap_name'
-                update_ap_name_and_locationHierarchy(accessPointId,new_ap_name, ap_locationHierarchy_element)
+                update_ap_name_and_locationHierarchy(accessPointId,new_ap_name, ap_locationHierarchy_element, ap_apGroupName_element)
                 
+                # Sleep for 20 seconds to give CiscoPrime Time to Update AP name
+                time.sleep(20)
+
+                print(f"AP Name: {new_ap_name} updated")
     except Exception as e:
         print(f"An error occurred: {str(e)}")
 
